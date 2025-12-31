@@ -10,7 +10,7 @@ import (
 )
 
 var (
-	ErrInvalidURL = errors.New("invalid url")
+	ErrInvalidURL = errors.New("invalid URL")
 )
 
 type URLService struct {
@@ -26,24 +26,23 @@ func NewURLService(repo repositories.URLRepository, baseURL string) *URLService 
 }
 
 func (s *URLService) ShortenURL(originalURL string) (*models.ShortenResponse, error) {
-	if !utils.IsValidUrl(originalURL) {
+	if !utils.IsValidURL(originalURL) {
 		return nil, ErrInvalidURL
 	}
+
 	normalizedURL := utils.NormalizeURL(originalURL)
 
-	existingURL, err := s.repo.FindByOriginalURL(originalURL)
+	existingURL, err := s.repo.FindByOriginalURL(normalizedURL)
 	if err == nil {
 		return &models.ShortenResponse{
-			ShortURL:    fmt.Sprintf("%s%s", s.baseURL, existingURL.ShortCode),
+			ShortURL:    fmt.Sprintf("%s/%s", s.baseURL, existingURL.ShortCode),
 			OriginalURL: existingURL.OriginalURL,
 			ShortCode:   existingURL.ShortCode,
 		}, nil
 	}
 
 	var shortCode string
-
 	maxAttempts := 5
-
 	for i := 0; i < maxAttempts; i++ {
 		shortCode = utils.GenerateShortCode(6)
 		_, err := s.repo.FindByShortCode(shortCode)
@@ -53,7 +52,7 @@ func (s *URLService) ShortenURL(originalURL string) (*models.ShortenResponse, er
 	}
 
 	url := &models.URL{
-		OriginalURL: originalURL,
+		OriginalURL: normalizedURL,
 		ShortCode:   shortCode,
 	}
 

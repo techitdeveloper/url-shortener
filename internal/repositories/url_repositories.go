@@ -20,7 +20,7 @@ type URLRepository interface {
 }
 
 type InMemoryURLRepository struct {
-	urls map[string]*models.URL
+	urls map[string]*models.URL // shortCode -> URL
 	mu   sync.RWMutex
 }
 
@@ -33,21 +33,26 @@ func NewInMemoryURLRepository() *InMemoryURLRepository {
 func (r *InMemoryURLRepository) Save(url *models.URL) error {
 	r.mu.Lock()
 	defer r.mu.Unlock()
+
 	if _, exists := r.urls[url.ShortCode]; exists {
 		return ErrShortCodeExists
 	}
+
 	url.CreatedAt = time.Now()
 	r.urls[url.ShortCode] = url
+
 	return nil
 }
 
 func (r *InMemoryURLRepository) FindByShortCode(shortCode string) (*models.URL, error) {
 	r.mu.RLock()
 	defer r.mu.RUnlock()
+
 	url, exists := r.urls[shortCode]
 	if !exists {
 		return nil, ErrURLNotFound
 	}
+
 	return url, nil
 }
 

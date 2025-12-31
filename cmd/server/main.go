@@ -13,18 +13,23 @@ import (
 func main() {
 	port := "8080"
 	baseURL := "http://localhost:" + port
+
 	urlRepo := repositories.NewInMemoryURLRepository()
+
 	urlService := services.NewURLService(urlRepo, baseURL)
+
 	urlHandler := handlers.NewURLHandler(urlService)
 	healthHandler := handlers.NewHealthHandler()
+
 	mux := http.NewServeMux()
+
 	mux.HandleFunc("/health", healthHandler.Health)
 	mux.HandleFunc("/api/v1/shorten", urlHandler.ShortenURL)
 
 	mux.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
 		if r.URL.Path == "/" {
 			w.WriteHeader(http.StatusOK)
-			w.Write([]byte("URL Shortener API"))
+			w.Write([]byte("URL shorten API"))
 			return
 		}
 		urlHandler.RedirectURL(w, r)

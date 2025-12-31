@@ -19,6 +19,7 @@ func NewURLHandler(service *services.URLService) *URLHandler {
 	}
 }
 
+// ShortenURL handles POST /api/v1/shorten
 func (h *URLHandler) ShortenURL(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodPost {
 		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
@@ -47,7 +48,6 @@ func (h *URLHandler) ShortenURL(w http.ResponseWriter, r *http.Request) {
 	}
 
 	respondWithJSON(w, http.StatusCreated, response)
-
 }
 
 func (h *URLHandler) RedirectURL(w http.ResponseWriter, r *http.Request) {
@@ -56,9 +56,7 @@ func (h *URLHandler) RedirectURL(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Extract short code from path
-	shortCode := r.URL.Path[1:] // Remove leading "/"
-
+	shortCode := r.URL.Path[1:]
 	if shortCode == "" {
 		http.Error(w, "Short code is required", http.StatusBadRequest)
 		return
@@ -77,12 +75,12 @@ func (h *URLHandler) RedirectURL(w http.ResponseWriter, r *http.Request) {
 	http.Redirect(w, r, originalURL, http.StatusMovedPermanently)
 }
 
-func respondWithError(w http.ResponseWriter, code int, message string) {
-	respondWithJSON(w, code, map[string]string{"error": message})
-}
-
 func respondWithJSON(w http.ResponseWriter, code int, payload interface{}) {
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(code)
 	json.NewEncoder(w).Encode(payload)
+}
+
+func respondWithError(w http.ResponseWriter, code int, message string) {
+	respondWithJSON(w, code, map[string]string{"error": message})
 }

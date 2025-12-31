@@ -5,7 +5,7 @@ import (
 	"strings"
 )
 
-func IsValidUrl(urlStr string) bool {
+func IsValidURL(urlStr string) bool {
 	if urlStr == "" {
 		return false
 	}
@@ -15,7 +15,6 @@ func IsValidUrl(urlStr string) bool {
 	}
 
 	parsedURL, err := url.ParseRequestURI(urlStr)
-
 	if err != nil {
 		return false
 	}
@@ -24,7 +23,7 @@ func IsValidUrl(urlStr string) bool {
 }
 
 func NormalizeURL(urlStr string) string {
-	if !strings.HasPrefix(urlStr, "http://") && !strings.HasPrefix(urlStr, "https://") {
+	if !strings.HasPrefix(urlStr, "https://") && !strings.HasPrefix(urlStr, "http://") {
 		return "http://" + urlStr
 	}
 	return urlStr
