@@ -5,18 +5,26 @@ import (
 	"log"
 	"net/http"
 
+	"github.com/techitdeveloper/url-shortener/database"
+	"github.com/techitdeveloper/url-shortener/internal/config"
 	"github.com/techitdeveloper/url-shortener/internal/handlers"
 	"github.com/techitdeveloper/url-shortener/internal/repositories"
 	"github.com/techitdeveloper/url-shortener/internal/services"
 )
 
 func main() {
-	port := "8080"
-	baseURL := "http://localhost:" + port
+	cfg := config.GetConfig()
 
-	urlRepo := repositories.NewInMemoryURLRepository()
+	db, err := database.NewPostgresDB(&cfg.Database)
+	if err != nil {
+		log.Fatal("Failed to connect database:", err)
+	}
 
-	urlService := services.NewURLService(urlRepo, baseURL)
+	defer db.Close()
+
+	urlRepo := repositories.NewPostgresURLRepository(db)
+
+	urlService := services.NewURLService(urlRepo, cfg.BaseURL)
 
 	urlHandler := handlers.NewURLHandler(urlService)
 	healthHandler := handlers.NewHealthHandler()
@@ -29,15 +37,19 @@ func main() {
 	mux.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
 		if r.URL.Path == "/" {
 			w.WriteHeader(http.StatusOK)
-			w.Write([]byte("URL shorten API"))
+			w.Write([]byte("URL Shortener API - PostgreSQL Edition"))
 			return
 		}
 		urlHandler.RedirectURL(w, r)
 	})
 
-	fmt.Printf("Server starting on port %s...\n", port)
-	fmt.Printf("Base URL: %s\n", baseURL)
-	if err := http.ListenAndServe(":"+port, mux); err != nil {
+	addr := ":" + cfg.ServerPort
+	fmt.Printf("Server starting on port %s...\n", cfg.ServerPort)
+	fmt.Printf("Base URL: %s\n", cfg.BaseURL)
+	fmt.Println("Using PostgreSQL database")
+
+	if err := http.ListenAndServe(addr, mux); err != nil {
 		log.Fatal(err)
 	}
+
 }
