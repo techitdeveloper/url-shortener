@@ -3,12 +3,14 @@ package config
 import (
 	"fmt"
 	"os"
+	"strconv"
 )
 
 type Config struct {
 	ServerPort string
 	BaseURL    string
 	Database   DatabaseConfig
+	Redis      RedisConfig
 }
 
 type DatabaseConfig struct {
@@ -18,6 +20,14 @@ type DatabaseConfig struct {
 	Password string
 	DBName   string
 	SSLMode  string
+}
+
+type RedisConfig struct {
+	Host     string
+	Port     string
+	Password string
+	DB       int
+	TTL      int
 }
 
 func GetConfig() *Config {
@@ -32,6 +42,13 @@ func GetConfig() *Config {
 			DBName:   getEnv("DB_NAME", "urlshortener"),
 			SSLMode:  getEnv("DB_SSLMODE", "disable"),
 		},
+		Redis: RedisConfig{
+			Host:     getEnv("REDIS_HOST", "localhost"),
+			Port:     getEnv("REDIS_PORT", "6379"),
+			Password: getEnv("REDIS_PASSWORD", ""),
+			DB:       getEnvAsInt("REDIS_DB", 0),
+			TTL:      getEnvAsInt("REDIS_TTL", 3600),
+		},
 	}
 }
 
@@ -42,8 +59,20 @@ func (c *DatabaseConfig) ConnectionString() string {
 	)
 }
 
+func (c *RedisConfig) Address() string {
+	return fmt.Sprintf("%s.%s", c.Host, c.Port)
+}
+
 func getEnv(key, defaultValue string) string {
 	if value := os.Getenv(key); value != "" {
+		return value
+	}
+	return defaultValue
+}
+
+func getEnvAsInt(key string, defaultValue int) int {
+	valueStr := getEnv(key, "")
+	if value, err := strconv.Atoi(valueStr); err == nil {
 		return value
 	}
 	return defaultValue

@@ -1,8 +1,11 @@
 package services
 
 import (
+	"context"
 	"errors"
 	"fmt"
+	"log"
+	"time"
 
 	"github.com/techitdeveloper/url-shortener/internal/models"
 	"github.com/techitdeveloper/url-shortener/internal/repositories"
@@ -15,12 +18,14 @@ var (
 
 type URLService struct {
 	repo    repositories.URLRepository
+	cache   *CacheService
 	baseURL string
 }
 
-func NewURLService(repo repositories.URLRepository, baseURL string) *URLService {
+func NewURLService(repo repositories.URLRepository, cache *CacheService, baseURL string) *URLService {
 	return &URLService{
 		repo:    repo,
+		cache:   cache,
 		baseURL: baseURL,
 	}
 }
@@ -34,6 +39,17 @@ func (s *URLService) ShortenURL(originalURL string) (*models.ShortenResponse, er
 
 	existingURL, err := s.repo.FindByOriginalURL(normalizedURL)
 	if err == nil {
+
+		ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+		defer cancel()
+
+		cacheKey := s.cache.BuildURLKey(existingURL.ShortCode)
+
+		if err := s.cache.Set(ctx, cacheKey, existingURL.OriginalURL); err != nil {
+			log.Printf("Failed to cache existing URL: %v", err)
+			// Continue anyway, not critical
+		}
+
 		return &models.ShortenResponse{
 			ShortURL:    fmt.Sprintf("%s/%s", s.baseURL, existingURL.ShortCode),
 			OriginalURL: existingURL.OriginalURL,
@@ -61,6 +77,15 @@ func (s *URLService) ShortenURL(originalURL string) (*models.ShortenResponse, er
 		return nil, err
 	}
 
+	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+	defer cancel()
+
+	cacheKey := s.cache.BuildURLKey(shortCode)
+	if err := s.cache.Set(ctx, cacheKey, url.OriginalURL); err != nil {
+		log.Printf("Failed to cache new URL: %v", err)
+		// Continue anyway, not critical
+	}
+
 	return &models.ShortenResponse{
 		ShortURL:    fmt.Sprintf("%s/%s", s.baseURL, shortCode),
 		OriginalURL: normalizedURL,
@@ -69,9 +94,33 @@ func (s *URLService) ShortenURL(originalURL string) (*models.ShortenResponse, er
 }
 
 func (s *URLService) GetOriginalURL(shortCode string) (string, error) {
+	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+	defer cancel()
+
+	cacheKey := s.cache.BuildURLKey(shortCode)
+	cachedURL, err := s.cache.Get(ctx, cacheKey)
+
+	if err != nil {
+		log.Printf("Cache error: %v", err)
+	} else if cachedURL != "" {
+		// Cache hit! Return immediately
+		log.Printf("Cache HIT for short code: %s", shortCode)
+		return cachedURL, nil
+	}
+
+	log.Printf("Cache MISS for short code: %s", shortCode)
 	url, err := s.repo.FindByShortCode(shortCode)
 	if err != nil {
 		return "", err
 	}
+
+	ctx2, cancel2 := context.WithTimeout(context.Background(), 2*time.Second)
+	defer cancel2()
+
+	if err := s.cache.Set(ctx2, cacheKey, url.OriginalURL); err != nil {
+		log.Printf("Failed to cache URL after database lookup: %v", err)
+		// Continue anyway, we have the URL
+	}
+
 	return url.OriginalURL, nil
 }

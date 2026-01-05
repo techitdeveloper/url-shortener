@@ -22,9 +22,17 @@ func main() {
 
 	defer db.Close()
 
+	redisClient, err := database.NewRedisClient(&cfg.Redis)
+	if err != nil {
+		log.Fatal("Failed to connect to Redis:", err)
+	}
+	defer redisClient.Close()
+
+	cacheService := services.NewCacheService(redisClient, cfg.Redis.TTL)
+
 	urlRepo := repositories.NewPostgresURLRepository(db)
 
-	urlService := services.NewURLService(urlRepo, cfg.BaseURL)
+	urlService := services.NewURLService(urlRepo, cacheService, cfg.BaseURL)
 
 	urlHandler := handlers.NewURLHandler(urlService)
 	healthHandler := handlers.NewHealthHandler()
