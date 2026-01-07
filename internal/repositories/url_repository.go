@@ -17,6 +17,7 @@ type URLRepository interface {
 	Save(url *models.URL) error
 	FindByShortCode(shortCode string) (*models.URL, error)
 	FindByOriginalURL(originalURL string) (*models.URL, error)
+	FindByUserID(userID int) ([]*models.URL, error)
 }
 
 type InMemoryURLRepository struct {

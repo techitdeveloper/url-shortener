@@ -9,6 +9,7 @@ import (
 type Config struct {
 	ServerPort string
 	BaseURL    string
+	JWTSecret  string
 	Database   DatabaseConfig
 	Redis      RedisConfig
 }
@@ -34,6 +35,7 @@ func GetConfig() *Config {
 	return &Config{
 		ServerPort: getEnv("SERVER_PORT", "8080"),
 		BaseURL:    getEnv("BASE_URL", "http://localhost:8080"),
+		JWTSecret:  getEnv("JWT_SECRET", "your-secret-key-change-in-production"),
 		Database: DatabaseConfig{
 			Host:     getEnv("DB_HOST", "localhost"),
 			Port:     getEnv("DB_PORT", "5432"),
@@ -60,7 +62,7 @@ func (c *DatabaseConfig) ConnectionString() string {
 }
 
 func (c *RedisConfig) Address() string {
-	return fmt.Sprintf("%s.%s", c.Host, c.Port)
+	return fmt.Sprintf("%s:%s", c.Host, c.Port)
 }
 
 func getEnv(key, defaultValue string) string {

@@ -6,6 +6,7 @@ type URL struct {
 	ID          string    `json:"id"`
 	OriginalURL string    `json:"original_url"`
 	ShortCode   string    `json:"short_code"`
+	UserID      *int      `json:"user_id,omitempty"`
 	CreatedAt   time.Time `json:"created_at"`
 }
 

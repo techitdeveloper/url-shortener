@@ -8,6 +8,7 @@ import (
 	"github.com/techitdeveloper/url-shortener/database"
 	"github.com/techitdeveloper/url-shortener/internal/config"
 	"github.com/techitdeveloper/url-shortener/internal/handlers"
+	"github.com/techitdeveloper/url-shortener/internal/middleware"
 	"github.com/techitdeveloper/url-shortener/internal/repositories"
 	"github.com/techitdeveloper/url-shortener/internal/services"
 )
@@ -31,16 +32,25 @@ func main() {
 	cacheService := services.NewCacheService(redisClient, cfg.Redis.TTL)
 
 	urlRepo := repositories.NewPostgresURLRepository(db)
+	userRepo := repositories.NewPostgresUserRepository(db)
 
 	urlService := services.NewURLService(urlRepo, cacheService, cfg.BaseURL)
+	authService := services.NewAuthService(userRepo, cfg.JWTSecret)
 
 	urlHandler := handlers.NewURLHandler(urlService)
+	authHandler := handlers.NewAuthHandler(authService)
 	healthHandler := handlers.NewHealthHandler()
+
+	authMiddleware := middleware.AuthMiddleware(authService)
 
 	mux := http.NewServeMux()
 
 	mux.HandleFunc("/health", healthHandler.Health)
+	mux.HandleFunc("/api/v1/register", authHandler.Register) // NEW
+	mux.HandleFunc("/api/v1/login", authHandler.Login)       // NEW
 	mux.HandleFunc("/api/v1/shorten", urlHandler.ShortenURL)
+
+	mux.Handle("/api/v1/urls", authMiddleware(http.HandlerFunc(urlHandler.GetMyURLs)))
 
 	mux.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
 		if r.URL.Path == "/" {
@@ -55,6 +65,8 @@ func main() {
 	fmt.Printf("Server starting on port %s...\n", cfg.ServerPort)
 	fmt.Printf("Base URL: %s\n", cfg.BaseURL)
 	fmt.Println("Using PostgreSQL database")
+	fmt.Println("Using Redis cache (TTL:", cfg.Redis.TTL, "seconds)")
+	fmt.Println("Authentication enabled with JWT")
 
 	if err := http.ListenAndServe(addr, mux); err != nil {
 		log.Fatal(err)

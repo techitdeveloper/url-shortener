@@ -17,13 +17,13 @@ func NewPostgresURLRepository(db *sql.DB) *PostgresURLRepository {
 
 func (r *PostgresURLRepository) Save(url *models.URL) error {
 	query := `
-		INSERT INTO urls (original_url, short_code, created_at)
-		VALUES ($1, $2, $3)
+		INSERT INTO urls (original_url, short_code, user_id, created_at)
+		VALUES ($1, $2, $3, $4)
 		RETURNING id
 		`
 	url.CreatedAt = time.Now()
 
-	err := r.db.QueryRow(query, url.OriginalURL, url.ShortCode, url.CreatedAt).Scan(&url.ID)
+	err := r.db.QueryRow(query, url.OriginalURL, url.ShortCode, url.UserID, url.CreatedAt).Scan(&url.ID)
 
 	if err != nil {
 		return err
@@ -34,7 +34,7 @@ func (r *PostgresURLRepository) Save(url *models.URL) error {
 
 func (r *PostgresURLRepository) FindByShortCode(shotCode string) (*models.URL, error) {
 	query := `
-		SELECT id, original_url, short_code, created_at
+		SELECT id, original_url, short_code, user_id, created_at
 		FROM urls
 		WHERE short_code = $1
 		`
@@ -44,6 +44,7 @@ func (r *PostgresURLRepository) FindByShortCode(shotCode string) (*models.URL, e
 		&url.ID,
 		&url.OriginalURL,
 		&url.ShortCode,
+		&url.UserID,
 		&url.CreatedAt,
 	)
 
@@ -56,7 +57,7 @@ func (r *PostgresURLRepository) FindByShortCode(shotCode string) (*models.URL, e
 
 func (r *PostgresURLRepository) FindByOriginalURL(originalURL string) (*models.URL, error) {
 	query := `
-		SELECT id, original_url, short_code, created_at
+		SELECT id, original_url, short_code, user_id, created_at
 		FROM urls
 		WHERE original_url = $1
 		`
@@ -65,6 +66,7 @@ func (r *PostgresURLRepository) FindByOriginalURL(originalURL string) (*models.U
 		&url.ID,
 		&url.OriginalURL,
 		&url.ShortCode,
+		&url.UserID,
 		&url.CreatedAt,
 	)
 
@@ -73,4 +75,43 @@ func (r *PostgresURLRepository) FindByOriginalURL(originalURL string) (*models.U
 	}
 
 	return url, nil
+}
+
+func (r *PostgresURLRepository) FindByUserID(userID int) ([]*models.URL, error) {
+	query := `
+		SELECT id, original_url, short_code, user_id, created_at
+		FROM urls
+		WHERE user_id = $1
+		ORDER BY created_at DESC
+	`
+
+	rows, err := r.db.Query(query, userID)
+	if err != nil {
+		return nil, err
+	}
+
+	defer rows.Close()
+
+	var urls []*models.URL
+	for rows.Next() {
+		url := &models.URL{}
+		err := rows.Scan(
+			&url.ID,
+			&url.OriginalURL,
+			&url.ShortCode,
+			&url.UserID,
+			&url.CreatedAt,
+		)
+		if err != nil {
+			return nil, err
+		}
+
+		urls = append(urls, url)
+	}
+
+	if err = rows.Err(); err != nil {
+		return nil, err
+	}
+
+	return urls, nil
 }

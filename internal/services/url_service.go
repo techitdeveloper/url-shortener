@@ -30,7 +30,7 @@ func NewURLService(repo repositories.URLRepository, cache *CacheService, baseURL
 	}
 }
 
-func (s *URLService) ShortenURL(originalURL string) (*models.ShortenResponse, error) {
+func (s *URLService) ShortenURL(originalURL string, userID *int) (*models.ShortenResponse, error) {
 	if !utils.IsValidURL(originalURL) {
 		return nil, ErrInvalidURL
 	}
@@ -39,22 +39,26 @@ func (s *URLService) ShortenURL(originalURL string) (*models.ShortenResponse, er
 
 	existingURL, err := s.repo.FindByOriginalURL(normalizedURL)
 	if err == nil {
+		// URL already shortened
+		// If it belongs to same user (or no user), return existing
+		if (existingURL.UserID == nil && userID == nil) ||
+			(existingURL.UserID != nil && userID != nil && *existingURL.UserID == *userID) {
+			// Cache it
+			ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+			defer cancel()
 
-		ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
-		defer cancel()
+			cacheKey := s.cache.BuildURLKey(existingURL.ShortCode)
+			if err := s.cache.Set(ctx, cacheKey, existingURL.OriginalURL); err != nil {
+				log.Printf("Failed to cache existing URL: %v", err)
+			}
 
-		cacheKey := s.cache.BuildURLKey(existingURL.ShortCode)
-
-		if err := s.cache.Set(ctx, cacheKey, existingURL.OriginalURL); err != nil {
-			log.Printf("Failed to cache existing URL: %v", err)
-			// Continue anyway, not critical
+			return &models.ShortenResponse{
+				ShortURL:    fmt.Sprintf("%s/%s", s.baseURL, existingURL.ShortCode),
+				OriginalURL: existingURL.OriginalURL,
+				ShortCode:   existingURL.ShortCode,
+			}, nil
 		}
-
-		return &models.ShortenResponse{
-			ShortURL:    fmt.Sprintf("%s/%s", s.baseURL, existingURL.ShortCode),
-			OriginalURL: existingURL.OriginalURL,
-			ShortCode:   existingURL.ShortCode,
-		}, nil
+		// Different user shortened same URL, create new short code
 	}
 
 	var shortCode string
@@ -70,6 +74,7 @@ func (s *URLService) ShortenURL(originalURL string) (*models.ShortenResponse, er
 	url := &models.URL{
 		OriginalURL: normalizedURL,
 		ShortCode:   shortCode,
+		UserID:      userID,
 	}
 
 	err = s.repo.Save(url)
@@ -123,4 +128,8 @@ func (s *URLService) GetOriginalURL(shortCode string) (string, error) {
 	}
 
 	return url.OriginalURL, nil
+}
+
+func (s *URLService) GetUserURLs(userID int) ([]*models.URL, error) {
+	return s.repo.FindByUserID(userID)
 }
