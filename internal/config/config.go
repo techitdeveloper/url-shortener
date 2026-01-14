@@ -10,10 +10,15 @@ type Config struct {
 	ServerPort string
 	BaseURL    string
 	JWTSecret  string
+	RateLimit  RateLimitConfig
 	Database   DatabaseConfig
 	Redis      RedisConfig
 }
 
+type RateLimitConfig struct {
+	Enabled         bool
+	RequestsPerHour int
+}
 type DatabaseConfig struct {
 	Host     string
 	Port     string
@@ -36,6 +41,10 @@ func GetConfig() *Config {
 		ServerPort: getEnv("SERVER_PORT", "8080"),
 		BaseURL:    getEnv("BASE_URL", "http://localhost:8080"),
 		JWTSecret:  getEnv("JWT_SECRET", "your-secret-key-change-in-production"),
+		RateLimit: RateLimitConfig{
+			Enabled:         getEnvAsBool("RATE_LIMIT_ENABLED", true),
+			RequestsPerHour: getEnvAsInt("RATE_LIMIT_REQUESTS_PER_HOUR", 10),
+		},
 		Database: DatabaseConfig{
 			Host:     getEnv("DB_HOST", "localhost"),
 			Port:     getEnv("DB_PORT", "5432"),
@@ -75,6 +84,14 @@ func getEnv(key, defaultValue string) string {
 func getEnvAsInt(key string, defaultValue int) int {
 	valueStr := getEnv(key, "")
 	if value, err := strconv.Atoi(valueStr); err == nil {
+		return value
+	}
+	return defaultValue
+}
+
+func getEnvAsBool(key string, defaultValue bool) bool {
+	valueStr := getEnv(key, "")
+	if value, err := strconv.ParseBool(valueStr); err == nil {
 		return value
 	}
 	return defaultValue

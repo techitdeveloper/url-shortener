@@ -18,6 +18,7 @@ type URLRepository interface {
 	FindByShortCode(shortCode string) (*models.URL, error)
 	FindByOriginalURL(originalURL string) (*models.URL, error)
 	FindByUserID(userID int) ([]*models.URL, error)
+	DeleteExpired() (int64, error)
 }
 
 type InMemoryURLRepository struct {

@@ -13,7 +13,10 @@ import (
 )
 
 var (
-	ErrInvalidURL = errors.New("invalid URL")
+	ErrInvalidURL         = errors.New("invalid URL")
+	ErrInvalidAlias       = errors.New("invalid custom alias")
+	ErrAliasAlreadyExists = errors.New("custom alias already exists")
+	ErrInvalidExpiration  = errors.New("invalid expiration date")
 )
 
 type URLService struct {
@@ -30,75 +33,95 @@ func NewURLService(repo repositories.URLRepository, cache *CacheService, baseURL
 	}
 }
 
-func (s *URLService) ShortenURL(originalURL string, userID *int) (*models.ShortenResponse, error) {
+// Updated ShortenURL with custom alias and expiration support
+func (s *URLService) ShortenURL(originalURL string, userID *int, customAlias *string, expiresAtStr *string) (*models.ShortenResponse, error) {
+	// Validate URL
 	if !utils.IsValidURL(originalURL) {
 		return nil, ErrInvalidURL
 	}
 
+	// Normalize URL
 	normalizedURL := utils.NormalizeURL(originalURL)
 
-	existingURL, err := s.repo.FindByOriginalURL(normalizedURL)
-	if err == nil {
-		// URL already shortened
-		// If it belongs to same user (or no user), return existing
-		if (existingURL.UserID == nil && userID == nil) ||
-			(existingURL.UserID != nil && userID != nil && *existingURL.UserID == *userID) {
-			// Cache it
-			ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
-			defer cancel()
-
-			cacheKey := s.cache.BuildURLKey(existingURL.ShortCode)
-			if err := s.cache.Set(ctx, cacheKey, existingURL.OriginalURL); err != nil {
-				log.Printf("Failed to cache existing URL: %v", err)
-			}
-
-			return &models.ShortenResponse{
-				ShortURL:    fmt.Sprintf("%s/%s", s.baseURL, existingURL.ShortCode),
-				OriginalURL: existingURL.OriginalURL,
-				ShortCode:   existingURL.ShortCode,
-			}, nil
+	// Parse expiration date if provided
+	var expiresAt *time.Time
+	if expiresAtStr != nil && *expiresAtStr != "" {
+		parsedTime, err := time.Parse(time.RFC3339, *expiresAtStr)
+		if err != nil {
+			return nil, ErrInvalidExpiration
 		}
-		// Different user shortened same URL, create new short code
+		// Check if expiration is in the future
+		if parsedTime.Before(time.Now()) {
+			return nil, errors.New("expiration date must be in the future")
+		}
+		expiresAt = &parsedTime
 	}
 
 	var shortCode string
-	maxAttempts := 5
-	for i := 0; i < maxAttempts; i++ {
-		shortCode = utils.GenerateShortCode(6)
+
+	// Handle custom alias
+	if customAlias != nil && *customAlias != "" {
+		// Validate custom alias
+		if !utils.IsValidAlias(*customAlias) {
+			return nil, ErrInvalidAlias
+		}
+
+		// Normalize alias
+		shortCode = utils.NormalizeAlias(*customAlias)
+
+		// Check if alias already exists
 		_, err := s.repo.FindByShortCode(shortCode)
-		if err == repositories.ErrURLNotFound {
-			break
+		if err == nil {
+			return nil, ErrAliasAlreadyExists
+		}
+		if err != repositories.ErrURLNotFound {
+			return nil, err
+		}
+	} else {
+		// Generate random short code
+		maxAttempts := 5
+		for i := 0; i < maxAttempts; i++ {
+			shortCode = utils.GenerateShortCode(6)
+			_, err := s.repo.FindByShortCode(shortCode)
+			if err == repositories.ErrURLNotFound {
+				break
+			}
 		}
 	}
 
+	// Create new URL entry
 	url := &models.URL{
 		OriginalURL: normalizedURL,
 		ShortCode:   shortCode,
 		UserID:      userID,
+		ExpiresAt:   expiresAt,
 	}
 
-	err = s.repo.Save(url)
+	err := s.repo.Save(url)
 	if err != nil {
 		return nil, err
 	}
 
+	// Cache the new URL
 	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
 	defer cancel()
 
 	cacheKey := s.cache.BuildURLKey(shortCode)
 	if err := s.cache.Set(ctx, cacheKey, url.OriginalURL); err != nil {
 		log.Printf("Failed to cache new URL: %v", err)
-		// Continue anyway, not critical
 	}
 
 	return &models.ShortenResponse{
 		ShortURL:    fmt.Sprintf("%s/%s", s.baseURL, shortCode),
 		OriginalURL: normalizedURL,
 		ShortCode:   shortCode,
+		ExpiresAt:   expiresAt,
 	}, nil
 }
 
+// GetOriginalURL now checks expiration
 func (s *URLService) GetOriginalURL(shortCode string) (string, error) {
+	// Try cache first
 	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
 	defer cancel()
 
@@ -108,23 +131,28 @@ func (s *URLService) GetOriginalURL(shortCode string) (string, error) {
 	if err != nil {
 		log.Printf("Cache error: %v", err)
 	} else if cachedURL != "" {
-		// Cache hit! Return immediately
 		log.Printf("Cache HIT for short code: %s", shortCode)
 		return cachedURL, nil
 	}
 
+	// Cache miss, query database
 	log.Printf("Cache MISS for short code: %s", shortCode)
 	url, err := s.repo.FindByShortCode(shortCode)
 	if err != nil {
 		return "", err
 	}
 
+	// Check if URL has expired
+	if url.ExpiresAt != nil && url.ExpiresAt.Before(time.Now()) {
+		return "", errors.New("URL has expired")
+	}
+
+	// Store in cache for next time
 	ctx2, cancel2 := context.WithTimeout(context.Background(), 2*time.Second)
 	defer cancel2()
 
 	if err := s.cache.Set(ctx2, cacheKey, url.OriginalURL); err != nil {
 		log.Printf("Failed to cache URL after database lookup: %v", err)
-		// Continue anyway, we have the URL
 	}
 
 	return url.OriginalURL, nil
